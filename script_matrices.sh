@@ -20,8 +20,9 @@ SOURCE_FILE="matrix.c"               # Archivo fuente del programa
 EXECUTABLE="matrix"                  # Nombre del ejecutable
 
 # Parámetros del programa
-N=4                                  # Tamaño de la matriz
-LAMBDA=2                           # Valor de lambda
+N=10                                  # Tamaño de la matriz
+LAMBDA=2                             # Valor de lambda
+C_MAX=2                              # Número máximo de columnas que puede manejar cada proceso
 
 # Compilar el programa con mpicc
 mpicc -o $EXECUTABLE $SOURCE_FILE -lm
@@ -33,9 +34,9 @@ if [ $? -ne 0 ]; then
 fi
 
 # Ejecutar el programa con diferentes números de procesos (de 1 a 8)
-for PROC in $(seq 1 8); do
-    echo "Ejecutando con $PROC proceso(s) - N=$N, lambda=$LAMBDA:"
-    mpirun -np $PROC ./$EXECUTABLE $N $LAMBDA
+for PROC in $(seq 2 8); do
+    echo "Ejecutando con $PROC proceso(s) - N=$N, lambda=$LAMBDA, C_MAX=$C_MAX:"
+    mpirun -np $PROC ./$EXECUTABLE $N $LAMBDA $C_MAX
     echo "----------------------------------------"
 done
 

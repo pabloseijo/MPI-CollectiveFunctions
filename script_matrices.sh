@@ -1,43 +1,54 @@
 #!/bin/bash
-# ----------------------------------------
-# MPI Job Script for CESGA
-# ----------------------------------------
-
-#SBATCH -J calculo_matrices          # Nombre del trabajo
-#SBATCH -o salida_matrices_%j.o      # Archivo de salida estándar
-#SBATCH -e errores_matrices_%j.e     # Archivo de errores
-#SBATCH -N 2                         # Número de nodos solicitados
-#SBATCH -n 8                         # Número total de tareas MPI
-#SBATCH --ntasks-per-node=4          # Tareas por nodo
-#SBATCH --time=00:10:00              # Tiempo máximo de ejecución (hh:mm:ss)
-#SBATCH --mem=2G                     # Memoria por núcleo
+#SBATCH -J escalabilidad_matrices     # Nombre del trabajo
+#SBATCH -o salida_%j.o                # Archivo de salida estándar
+#SBATCH -e errores_%j.e               # Archivo de errores
+#SBATCH -N 8                          # Número de nodos solicitados
+#SBATCH -n 32                         # Número total de tareas MPI
+#SBATCH --ntasks-per-node=4           # Tareas por nodo
+#SBATCH --time=02:00:00               # Tiempo máximo de ejecución (hh:mm:ss)
+#SBATCH --mem=16G                     # Memoria total por nodo
 
 # Cargar módulos necesarios
-module load gcc openmpi/4.1.4_ft3    # Cargar OpenMPI y GCC
-
-# Nombre del archivo fuente y del ejecutable
-SOURCE_FILE="matrix.c"               # Archivo fuente del programa
-EXECUTABLE="matrix"                  # Nombre del ejecutable
+module load gcc openmpi/4.1.4_ft3
 
 # Parámetros del programa
-N=10                                  # Tamaño de la matriz
-LAMBDA=2                             # Valor de lambda
-C_MAX=2                              # Número máximo de columnas que puede manejar cada proceso
+SOURCE_FILE="matrix.c"                # Archivo fuente del programa
+EXECUTABLE="matrix"                   # Nombre del ejecutable
+OUTPUT_FILE="resultados_grandes_intermedios.txt"  # Archivo donde se guardarán los resultados
 
 # Compilar el programa con mpicc
 mpicc -o $EXECUTABLE $SOURCE_FILE -lm
-
-# Verificar si la compilación fue exitosa
 if [ $? -ne 0 ]; then
     echo "Error al compilar el programa."
     exit 1
 fi
 
-# Ejecutar el programa con diferentes números de procesos (de 1 a 8)
-for PROC in $(seq 2 8); do
-    echo "Ejecutando con $PROC proceso(s) - N=$N, lambda=$LAMBDA, C_MAX=$C_MAX:"
-    mpirun -np $PROC ./$EXECUTABLE $N $LAMBDA $C_MAX
-    echo "----------------------------------------"
+# Borrar archivo de resultados anterior
+rm -f $OUTPUT_FILE
+echo "Procesos,N,Iteración,Tiempo" >> $OUTPUT_FILE
+
+# Parámetros específicos
+LAMBDAS=(1000000.0)                   # Valor grande de lambda (1e6)
+C_MAX=10                              # Tamaño máximo de columnas por proceso
+
+# Tamaños grandes de la matriz con valores intermedios adicionales
+N_SIZES=(500 750 1000 1250 1500 1750 2000 2500 3000 3500 4000 5000 6000 7000 8000 10000 12000 14000 16000 18000 20000 24000 28000 32000)
+
+# Número creciente de procesos MPI
+PROCESSES=(2 4 8 16 24 32 64)
+
+# Ejecutar cada configuración SOLO una vez
+for N in "${N_SIZES[@]}"; do
+    for PROC in "${PROCESSES[@]}"; do
+        echo "Ejecutando con $PROC procesos, N=$N y lambda=${LAMBDAS[0]}..."
+        OUTPUT=$(mpirun -np $PROC ./$EXECUTABLE $N ${LAMBDAS[0]} $C_MAX)
+        
+        # Extraer tiempo de ejecución desde la salida del programa
+        TIME=$(echo "$OUTPUT" | grep 'Tiempo total' | awk '{print $5}')
+        
+        # Guardar resultados en el archivo
+        echo "$PROC,$N,1,$TIME" >> $OUTPUT_FILE
+    done
 done
 
-echo "Ejecución completada"
+echo "Ejecución completada. Resultados almacenados en $OUTPUT_FILE"

@@ -6,7 +6,7 @@ void imprimir_matriz(double* matrix, int filas, int columnas, const char* nombre
 
 int main(int argc, char* argv[]) {
     int rank, tam, N, C_max;
-    double lambda;
+    double lambda, start_time, end_time;
     double *A = NULL, *B = NULL, *C = NULL;
 
     double *local_A = NULL, *local_B = NULL, *local_C = NULL;
@@ -26,6 +26,10 @@ int main(int argc, char* argv[]) {
     N = atoi(argv[1]);
     lambda = atof(argv[2]);
     C_max = atoi(argv[3]);
+
+    // Medición de tiempo
+    MPI_Barrier(MPI_COMM_WORLD);
+    start_time = MPI_Wtime();
 
     // Tamaños y desplazamientos para Scatterv y Gatherv
     int *sendcounts = malloc(tam * sizeof(int));
@@ -66,12 +70,6 @@ int main(int argc, char* argv[]) {
         MPI_Scatterv(A, sendcounts, displs, MPI_DOUBLE, local_A, N * local_col_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         MPI_Scatterv(B, sendcounts, displs, MPI_DOUBLE, local_B, N * local_col_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-        // Imprimir matrices locales A y B
-        printf("\nProceso %d - local_A:\n", rank);
-        imprimir_matriz(local_A, N, local_col_count, "local_A", rank);
-        printf("\nProceso %d - local_B:\n", rank);
-        imprimir_matriz(local_B, N, local_col_count, "local_B", rank);
-
         // Calcular local_C
         for (int col = 0; col < local_col_count; col++) {
             for (int row = 0; row < N; row++) {
@@ -79,10 +77,6 @@ int main(int argc, char* argv[]) {
                     lambda * local_A[row * local_col_count + col] + local_B[row * local_col_count + col];
             }
         }
-
-        // Imprimir matriz local_C después del cálculo
-        printf("\nProceso %d - local_C (resultado):\n", rank);
-        imprimir_matriz(local_C, N, local_col_count, "local_C", rank);
 
         // Recolectar resultados con MPI_Gatherv
         MPI_Gatherv(local_C, N * local_col_count, MPI_DOUBLE, C, sendcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -95,10 +89,11 @@ int main(int argc, char* argv[]) {
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
+    end_time = MPI_Wtime();
 
+    // Imprimir tiempo solo en el proceso 0
     if (rank == 0) {
-        printf("\nMatriz C resultado final:\n");
-        imprimir_matriz(C, N, N, "C", rank);
+        printf("Tiempo total de ejecución: %f segundos con %d procesos y tamaño N=%d.\n", end_time - start_time, tam, N);
         free(A);
         free(B);
         free(C);
@@ -108,14 +103,4 @@ int main(int argc, char* argv[]) {
     free(displs);
     MPI_Finalize();
     return 0;
-}
-
-void imprimir_matriz(double* matrix, int filas, int columnas, const char* nombre, int rank) {
-    printf("Proceso %d - Matriz %s:\n", rank, nombre);
-    for (int i = 0; i < filas; i++) {
-        for (int j = 0; j < columnas; j++) {
-            printf("%6.2lf ", matrix[i * columnas + j]);
-        }
-        printf("\n");
-    }
 }

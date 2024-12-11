@@ -27,6 +27,10 @@ int main(int argc, char* argv[]) {
     lambda = atof(argv[2]);
     C_max = atoi(argv[3]);
 
+    // Tamaños y desplazamientos para Scatterv y Gatherv
+    int *sendcounts = malloc(tam * sizeof(int));
+    int *displs = malloc(tam * sizeof(int));
+
     if (rank == 0) {
         A = (double*)malloc(N * N * sizeof(double));
         B = (double*)malloc(N * N * sizeof(double));
@@ -46,63 +50,48 @@ int main(int argc, char* argv[]) {
     while (columnas_procesadas < N) {
         int cols_to_send = (C_max < (N - columnas_procesadas)) ? C_max : (N - columnas_procesadas);
 
-        if (rank == 0) {
-            for (int p = 0; p < tam; p++) {
-                int start_col = columnas_procesadas + p * cols_to_send;
-                if (start_col < N) {
-                    MPI_Send(&cols_to_send, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
-                    MPI_Send(&A[start_col * N], cols_to_send * N, MPI_DOUBLE, p, 1, MPI_COMM_WORLD);
-                    MPI_Send(&B[start_col * N], cols_to_send * N, MPI_DOUBLE, p, 2, MPI_COMM_WORLD);
-                } else {
-                    int zero = 0;
-                    MPI_Send(&zero, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
-                }
+        // Calcular sendcounts y displs de manera cíclica
+        for (int p = 0; p < tam; p++) {
+            sendcounts[p] = (p * cols_to_send + columnas_procesadas < N) ? N * cols_to_send : 0;
+            displs[p] = (p * cols_to_send + columnas_procesadas) * N;
+        }
+
+        int local_col_count = sendcounts[rank] / N;
+
+        local_A = (double*)malloc(N * local_col_count * sizeof(double));
+        local_B = (double*)malloc(N * local_col_count * sizeof(double));
+        local_C = (double*)malloc(N * local_col_count * sizeof(double));
+
+        // Distribuir columnas con MPI_Scatterv
+        MPI_Scatterv(A, sendcounts, displs, MPI_DOUBLE, local_A, N * local_col_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Scatterv(B, sendcounts, displs, MPI_DOUBLE, local_B, N * local_col_count, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+        // Imprimir matrices locales A y B
+        printf("\nProceso %d - local_A:\n", rank);
+        imprimir_matriz(local_A, N, local_col_count, "local_A", rank);
+        printf("\nProceso %d - local_B:\n", rank);
+        imprimir_matriz(local_B, N, local_col_count, "local_B", rank);
+
+        // Calcular local_C
+        for (int col = 0; col < local_col_count; col++) {
+            for (int row = 0; row < N; row++) {
+                local_C[row * local_col_count + col] =
+                    lambda * local_A[row * local_col_count + col] + local_B[row * local_col_count + col];
             }
         }
 
-        // Recepción del número de columnas
-        int cols_received;
-        MPI_Recv(&cols_received, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // Imprimir matriz local_C después del cálculo
+        printf("\nProceso %d - local_C (resultado):\n", rank);
+        imprimir_matriz(local_C, N, local_col_count, "local_C", rank);
 
-        if (cols_received > 0) {
-            local_A = (double*)malloc(N * cols_received * sizeof(double));
-            local_B = (double*)malloc(N * cols_received * sizeof(double));
-            local_C = (double*)malloc(N * cols_received * sizeof(double));
+        // Recolectar resultados con MPI_Gatherv
+        MPI_Gatherv(local_C, N * local_col_count, MPI_DOUBLE, C, sendcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-            MPI_Recv(local_A, N * cols_received, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            MPI_Recv(local_B, N * cols_received, MPI_DOUBLE, 0, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        free(local_A);
+        free(local_B);
+        free(local_C);
 
-            // Imprimir matrices locales
-            printf("\nProceso %d - local_A:\n", rank);
-            imprimir_matriz(local_A, N, cols_received, "local_A", rank);
-            printf("\nProceso %d - local_B:\n", rank);
-            imprimir_matriz(local_B, N, cols_received, "local_B", rank);
-
-            // Calcular local_C
-            for (int col = 0; col < cols_received; col++) {
-                for (int row = 0; row < N; row++) {
-                    local_C[row * cols_received + col] =
-                        lambda * local_A[row * cols_received + col] + local_B[row * cols_received + col];
-                }
-            }
-
-            MPI_Send(local_C, N * cols_received, MPI_DOUBLE, 0, 3, MPI_COMM_WORLD);
-
-            free(local_A);
-            free(local_B);
-            free(local_C);
-        }
-
-        if (rank == 0) {
-            for (int p = 0; p < tam; p++) {
-                int start_col = columnas_procesadas + p * cols_to_send;
-                if (start_col < N) {
-                    MPI_Recv(&C[start_col * N], cols_to_send * N, MPI_DOUBLE, p, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                }
-            }
-        }
-
-        columnas_procesadas += cols_to_send * tam;
+        columnas_procesadas += cols_to_send * tam;  // Actualizar columnas procesadas
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -115,6 +104,8 @@ int main(int argc, char* argv[]) {
         free(C);
     }
 
+    free(sendcounts);
+    free(displs);
     MPI_Finalize();
     return 0;
 }

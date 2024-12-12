@@ -104,3 +104,14 @@ int main(int argc, char* argv[]) {
     MPI_Finalize();
     return 0;
 }
+
+void imprimir_matriz(double* matrix, int filas, int columnas, const char* nombre, int rank) {
+    printf("Proceso %d - Matriz %s:\n", rank, nombre);
+    for (int i = 0; i < filas; i++) {
+        for (int j = 0; j < columnas; j++) {
+            printf("%lf ", matrix[i * columnas + j]);
+            printf("%6.2lf ", matrix[i * columnas + j]);
+        }
+        printf("\n");
+    }
+}

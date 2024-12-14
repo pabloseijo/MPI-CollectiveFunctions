@@ -14,7 +14,8 @@ module load gcc openmpi/4.1.4_ft3
 # Parámetros del programa
 SOURCE_FILE="matrix.c"                # Archivo fuente del programa
 EXECUTABLE="matrix"                   # Nombre del ejecutable
-OUTPUT_FILE="resultados_grandes_intermedios.txt"  # Archivo donde se guardarán los resultados
+OUTPUT_FILE="resultados_grandes_intermedios.txt"  # Archivo para resultados paralelos
+SEQUENTIAL_OUTPUT_FILE="resultados_secuenciales.txt" # Archivo para resultados secuenciales
 
 # Compilar el programa con mpicc
 mpicc -o $EXECUTABLE $SOURCE_FILE -lm
@@ -23,9 +24,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Borrar archivo de resultados anterior
-rm -f $OUTPUT_FILE
+# Borrar archivos de resultados anteriores
+rm -f $OUTPUT_FILE $SEQUENTIAL_OUTPUT_FILE
 echo "Procesos,N,Iteración,Tiempo" >> $OUTPUT_FILE
+echo "Procesos,N,Iteración,Tiempo" >> $SEQUENTIAL_OUTPUT_FILE
 
 # Parámetros específicos
 LAMBDAS=(1000000.0)                   # Valor grande de lambda (1e6)
@@ -34,10 +36,20 @@ C_MAX=10                              # Tamaño máximo de columnas por proceso
 # Tamaños grandes de la matriz con valores intermedios adicionales
 N_SIZES=(500 750 1000 1250 1500 1750 2000 2500 3000 3500 4000 5000 6000 7000 8000 10000 12000 14000 16000 18000 20000 24000 28000 32000)
 
-# Número creciente de procesos MPI
-PROCESSES=(2 4 8 16 24 32 64)
+# --- Ejecución Secuencial ---
+echo "Ejecutando con 1 proceso (secuencial)..."
+for N in "${N_SIZES[@]}"; do
+    echo "Ejecutando con 1 proceso, N=$N y lambda=${LAMBDAS[0]}..."
+    OUTPUT=$(mpirun -np 1 ./$EXECUTABLE $N ${LAMBDAS[0]} $C_MAX)
 
-# Ejecutar cada configuración SOLO una vez
+    # Extraer tiempo de ejecución desde la salida del programa
+    TIME=$(echo "$OUTPUT" | grep 'Tiempo total' | awk '{print $5}')
+
+    # Guardar resultados en el archivo secuencial
+    echo "1,$N,1,$TIME" >> $SEQUENTIAL_OUTPUT_FILE
+done
+
+# --- Ejecución Paralela ---
 for N in "${N_SIZES[@]}"; do
     for PROC in "${PROCESSES[@]}"; do
         echo "Ejecutando con $PROC procesos, N=$N y lambda=${LAMBDAS[0]}..."
@@ -51,4 +63,4 @@ for N in "${N_SIZES[@]}"; do
     done
 done
 
-echo "Ejecución completada. Resultados almacenados en $OUTPUT_FILE"
+echo "Ejecución completada. Resultados almacenados en $OUTPUT_FILE y $SEQUENTIAL_OUTPUT_FILE"

@@ -27,10 +27,6 @@ int main(int argc, char* argv[]) {
     lambda = atof(argv[2]);
     C_max = atoi(argv[3]);
 
-    // Medición de tiempo
-    MPI_Barrier(MPI_COMM_WORLD);
-    start_time = MPI_Wtime();
-
     // Tamaños y desplazamientos para Scatterv y Gatherv
     int *sendcounts = malloc(tam * sizeof(int));
     int *displs = malloc(tam * sizeof(int));
@@ -50,6 +46,10 @@ int main(int argc, char* argv[]) {
     }
 
     int columnas_procesadas = 0;
+
+    // Medición de tiempo
+    MPI_Barrier(MPI_COMM_WORLD);
+    start_time = MPI_Wtime();
 
     while (columnas_procesadas < N) {
         int cols_to_send = (C_max < (N - columnas_procesadas)) ? C_max : (N - columnas_procesadas);
